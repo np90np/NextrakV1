@@ -1,0 +1,16 @@
+{
+  "headers": {
+    "x-nextjs-stale-time": "300",
+    "x-nextjs-prerender": "1",
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/(app)/layout,_N_T_/(app)/checklists/layout,_N_T_/(app)/checklists/page,_N_T_/checklists"
+  },
+  "segmentPaths": [
+    "/_tree",
+    "/_full",
+    "/!KGFwcCk/checklists/__PAGE__",
+    "/!KGFwcCk/checklists",
+    "/!KGFwcCk",
+    "/_index",
+    "/_head"
+  ]
+}
