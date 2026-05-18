@@ -153,7 +153,7 @@ export default function Dashboard() {
           { title: "Today's Reports", value: stats.todayReports, icon: <AssignmentIcon />, bgcolor: 'success.main', href: '/reports' },
         ].map((s) => (
           <Grid item xs={6} md={3} key={s.title}>
-            <StatCard {...s} color={s.bgcolor} onClick={() => router.push(s.href)} loading={loading} />
+            <StatCard {...s} onClick={() => router.push(s.href)} loading={loading} />
           </Grid>
         ))}
       </Grid>
