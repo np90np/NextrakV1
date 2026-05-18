@@ -271,12 +271,12 @@ export default function Assets() {
     return `In ${Math.round(s.remaining).toLocaleString()} ${unit}`;
   };
 
-  const nextServiceColor = (asset: Asset): 'error' | 'warning' | 'success' | 'text.secondary' => {
+  const nextServiceColor = (asset: Asset): string => {
     const s = getSmuStatus(asset);
     if (!s) return 'text.secondary';
-    if (s.isOverdue) return 'error';
-    if (s.isDueSoon) return 'warning';
-    return 'success';
+    if (s.isOverdue) return 'error.main';
+    if (s.isDueSoon) return 'warning.main';
+    return 'success.main';
   };
 
   return (
@@ -409,9 +409,7 @@ export default function Assets() {
                           <TableCell align="right">
                             {s ? (
                               <Tooltip title={`Due at ${s.nextDue.toLocaleString()} ${asset.service_interval_unit ?? 'hr'}`}>
-                                <Typography variant="body2" fontWeight={600}
-                                  color={color === 'text.secondary' ? undefined : color}
-                                  sx={color !== 'text.secondary' ? { color } : {}}>
+                                <Typography variant="body2" fontWeight={600} sx={{ color }}>
                                   {nextServiceLabel(asset)}
                                 </Typography>
                               </Tooltip>
@@ -491,9 +489,7 @@ export default function Assets() {
                             <Typography variant="caption" color="text.secondary">
                               SMU: {Number(asset.current_smu ?? 0).toLocaleString()} {asset.service_interval_unit}
                             </Typography>
-                            <Typography variant="caption" fontWeight={600}
-                              color={color === 'text.secondary' ? undefined : color}
-                              sx={color !== 'text.secondary' ? { color } : {}}>
+                            <Typography variant="caption" fontWeight={600} sx={{ color }}>
                               {nextServiceLabel(asset)}
                             </Typography>
                           </Box>
