@@ -12,6 +12,7 @@ export type AssetStatus = 'available' | 'in_use' | 'maintenance' | 'retired';
 export interface Employee {
   id: string;
   user_id: string | null;
+  clerk_user_id: string | null;
   first_name: string;
   last_name: string;
   email: string;
@@ -163,6 +164,10 @@ export interface Asset {
   location: string;
   last_service_date: string | null;
   next_service_date: string | null;
+  current_smu: number;
+  last_service_smu: number;
+  service_interval_value: number | null;
+  service_interval_unit: 'hr' | 'km';
   notes: string;
   created_at: string;
   updated_at: string;
