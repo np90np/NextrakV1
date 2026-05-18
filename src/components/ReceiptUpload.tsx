@@ -33,7 +33,7 @@ export default function ReceiptUpload({ value, onChange, label = 'Receipt photo'
     setError(null);
 
     try {
-      const presignRes = await authedFetch('/api/upload', {
+      const presignRes = await authedFetch('/api/storage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fileName: file.name, contentType: file.type }),
@@ -64,7 +64,7 @@ export default function ReceiptUpload({ value, onChange, label = 'Receipt photo'
   const openReceipt = async () => {
     if (!value) return;
     try {
-      const res = await authedFetch(`/api/download?key=${encodeURIComponent(value)}`);
+      const res = await authedFetch(`/api/storage?key=${encodeURIComponent(value)}`);
       if (!res.ok) throw new Error('Unable to load receipt');
       const { downloadUrl } = (await res.json()) as { downloadUrl: string };
       window.open(downloadUrl, '_blank', 'noopener');

@@ -43,6 +43,11 @@ import { format } from 'date-fns';
 import ReceiptUpload from '../components/ReceiptUpload';
 import { useAuthedFetch } from '../lib/api';
 
+const parseLocalDate = (dateStr: string): Date => {
+  const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
 const categoryLabel: Record<ExpenseCategory, string> = {
   materials: 'Materials',
   fuel: 'Fuel',
@@ -246,7 +251,7 @@ export default function DailyReports() {
 
   const viewReceipt = async (receiptKey: string) => {
     try {
-      const res = await authedFetch(`/api/download?key=${encodeURIComponent(receiptKey)}`);
+      const res = await authedFetch(`/api/storage?key=${encodeURIComponent(receiptKey)}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Unable to load receipt (${res.status})`);
@@ -306,7 +311,7 @@ export default function DailyReports() {
     setExpenses((prev) => prev.filter((e) => e.id !== id));
   };
 
-  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalExpenses = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
   return (
     <Box>
@@ -377,7 +382,7 @@ export default function DailyReports() {
                   <TableRow key={report.id} hover>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600}>
-                        {format(new Date(report.report_date), 'EEE MMM d, yyyy')}
+                        {format(parseLocalDate(report.report_date), 'EEE MMM d, yyyy')}
                       </Typography>
                     </TableCell>
                     <TableCell><Typography variant="body2">{report.project?.name ?? '---'}</Typography></TableCell>
@@ -472,7 +477,7 @@ export default function DailyReports() {
                     <AttachMoneyIcon sx={{ color: 'primary.main' }} />
                     <Typography variant="subtitle1" fontWeight={600}>Expenses</Typography>
                     {editing && expenses.length > 0 && (
-                      <Chip label={`$${expenses.reduce((sum, e) => sum + e.amount, 0).toFixed(2)}`} color="primary" size="small" />
+                      <Chip label={`$${expenses.reduce((sum, e) => sum + Number(e.amount), 0).toFixed(2)}`} color="primary" size="small" />
                     )}
                   </Box>
                   <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={openAddExpense}>
@@ -501,7 +506,7 @@ export default function DailyReports() {
                               <Typography variant="body2">{exp.description}</Typography>
                             </TableCell>
                             <TableCell align="right">
-                              <Typography variant="body2" fontWeight={600}>${exp.amount.toFixed(2)}</Typography>
+                              <Typography variant="body2" fontWeight={600}>${Number(exp.amount).toFixed(2)}</Typography>
                             </TableCell>
                             <TableCell align="right">
                               <IconButton size="small" color="error" onClick={() => deleteExpense(exp.id)}>
@@ -550,7 +555,7 @@ export default function DailyReports() {
                 <Box>
                   <Typography variant="h6" fontWeight={600}>Daily Diary</Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {format(new Date(viewing.report_date), 'EEEE, MMMM d, yyyy')}
+                    {format(parseLocalDate(viewing.report_date), 'EEEE, MMMM d, yyyy')}
                   </Typography>
                 </Box>
                 <IconButton onClick={() => setViewDialogOpen(false)}><CloseIcon /></IconButton>
@@ -660,7 +665,7 @@ export default function DailyReports() {
                               </TableCell>
                               <TableCell><Typography variant="body2">{exp.supplier || '---'}</Typography></TableCell>
                               <TableCell align="right">
-                                <Typography variant="body2" fontWeight={600}>${exp.amount.toFixed(2)}</Typography>
+                                <Typography variant="body2" fontWeight={600}>${Number(exp.amount).toFixed(2)}</Typography>
                               </TableCell>
                               <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
                                 {exp.receipt_key ? (
@@ -746,7 +751,7 @@ export default function DailyReports() {
                               <TableCell />
                               <TableCell align="right">
                                 <Typography variant="body2" fontWeight={700}>
-                                  {timesheetEntries.reduce((sum, e) => sum + e.hours, 0)}h total
+                                  {timesheetEntries.reduce((sum, e) => sum + Number(e.hours), 0)}h total
                                 </Typography>
                               </TableCell>
                               <TableCell />
