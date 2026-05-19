@@ -90,8 +90,12 @@ export default function MyTimesheet() {
   const [entryForm, setEntryForm] = useState({
     project_id: '',
     work_date: '',
-    start_time: '',
-    end_time: '',
+    start_hour: '',
+    start_minute: '',
+    start_period: 'AM',
+    end_hour: '',
+    end_minute: '',
+    end_period: 'AM',
     hours: '',
     break_minutes: '0',
     description: '',
@@ -147,8 +151,8 @@ export default function MyTimesheet() {
     setEntryForm({
       project_id: projects[0]?.id ?? '',
       work_date: defaultDate ?? '',
-      start_time: '',
-      end_time: '',
+      start_hour: '', start_minute: '', start_period: 'AM',
+      end_hour: '',   end_minute: '',   end_period: 'AM',
       hours: '',
       break_minutes: '0',
       description: '',
@@ -159,11 +163,13 @@ export default function MyTimesheet() {
 
   const openEditEntry = (entry: TimesheetEntry) => {
     setEditingEntry(entry);
+    const sp = timeToHMS((entry.start_time ?? '').slice(0, 5));
+    const ep = timeToHMS((entry.end_time ?? '').slice(0, 5));
     setEntryForm({
       project_id: entry.project_id ?? '',
       work_date: entry.work_date,
-      start_time: (entry.start_time ?? '').slice(0, 5),
-      end_time: (entry.end_time ?? '').slice(0, 5),
+      start_hour: sp.hour, start_minute: sp.minute, start_period: sp.period,
+      end_hour:   ep.hour, end_minute:   ep.minute, end_period:   ep.period,
       hours: entry.hours.toString(),
       break_minutes: (entry.break_minutes ?? 0).toString(),
       description: entry.description,
@@ -173,7 +179,9 @@ export default function MyTimesheet() {
   };
 
   const saveEntry = async () => {
-    if (!entryForm.work_date || !entryForm.start_time || !entryForm.end_time) {
+    const startTime = hmsToTime(entryForm.start_hour, entryForm.start_minute, entryForm.start_period);
+    const endTime   = hmsToTime(entryForm.end_hour,   entryForm.end_minute,   entryForm.end_period);
+    if (!entryForm.work_date || !startTime || !endTime) {
       setError('Date, start time, and end time are required.');
       return;
     }
@@ -182,8 +190,8 @@ export default function MyTimesheet() {
       timesheet_id: selectedTs!.id,
       project_id: entryForm.project_id || null,
       work_date: entryForm.work_date,
-      start_time: entryForm.start_time,
-      end_time: entryForm.end_time,
+      start_time: startTime,
+      end_time: endTime,
       hours: parseFloat(entryForm.hours),
       break_minutes: parseInt(entryForm.break_minutes),
       work_type: 'ordinary' as WorkType,
@@ -294,13 +302,13 @@ export default function MyTimesheet() {
     return Math.max(0, workMinutes / 60);
   };
 
-  const handleTimeChange = (field: 'start_time' | 'end_time' | 'break_minutes', value: string) => {
+  const updateTimePart = (field: keyof typeof entryForm, value: string) => {
     const newForm = { ...entryForm, [field]: value };
-    if (field === 'start_time' || field === 'end_time' || field === 'break_minutes') {
-      const breakMins = parseInt(newForm.break_minutes) || 0;
-      const calculated = calculateHours(newForm.start_time, newForm.end_time, breakMins);
-      newForm.hours = calculated > 0 ? calculated.toFixed(2) : '';
-    }
+    const startStr = hmsToTime(newForm.start_hour, newForm.start_minute, newForm.start_period);
+    const endStr   = hmsToTime(newForm.end_hour,   newForm.end_minute,   newForm.end_period);
+    const breakMins = parseInt(newForm.break_minutes) || 0;
+    const calculated = calculateHours(startStr, endStr, breakMins);
+    newForm.hours = calculated > 0 ? calculated.toFixed(2) : '';
     setEntryForm(newForm);
   };
 
@@ -529,23 +537,21 @@ export default function MyTimesheet() {
             </TextField>
             <Stack spacing={1}>
               <Typography variant="subtitle2" fontWeight={600}>Work Hours</Typography>
-              {(['start_time', 'end_time'] as const).map((field) => {
-                const hms = timeToHMS(entryForm[field]);
-                const label = field === 'start_time' ? 'Start Time' : 'Finish Time';
-                const onChange = (part: 'hour' | 'minute' | 'period', val: string) => {
-                  const updated = { ...hms, [part]: val };
-                  handleTimeChange(field, hmsToTime(updated.hour, updated.minute, updated.period));
-                };
+              {(['start', 'end'] as const).map((prefix) => {
+                const label = prefix === 'start' ? 'Start Time' : 'Finish Time';
+                const hourField   = `${prefix}_hour`   as keyof typeof entryForm;
+                const minuteField = `${prefix}_minute` as keyof typeof entryForm;
+                const periodField = `${prefix}_period` as keyof typeof entryForm;
                 return (
-                  <Box key={field}>
+                  <Box key={prefix}>
                     <Typography variant="caption" color="text.secondary" fontWeight={500}>
                       {label} *
                     </Typography>
                     <Stack direction="row" spacing={1} mt={0.5}>
                       <TextField
                         select size="small" label="Hour"
-                        value={hms.hour}
-                        onChange={(e) => onChange('hour', e.target.value)}
+                        value={entryForm[hourField]}
+                        onChange={(e) => updateTimePart(hourField, e.target.value)}
                         sx={{ flex: 2 }}
                         SelectProps={{ MenuProps: { PaperProps: { style: { maxHeight: 220 } } } }}
                       >
@@ -554,8 +560,8 @@ export default function MyTimesheet() {
                       </TextField>
                       <TextField
                         select size="small" label="Min"
-                        value={hms.minute}
-                        onChange={(e) => onChange('minute', e.target.value)}
+                        value={entryForm[minuteField]}
+                        onChange={(e) => updateTimePart(minuteField, e.target.value)}
                         sx={{ flex: 1.5 }}
                       >
                         <MenuItem value=""><em>—</em></MenuItem>
@@ -563,8 +569,8 @@ export default function MyTimesheet() {
                       </TextField>
                       <TextField
                         select size="small" label="AM/PM"
-                        value={hms.period}
-                        onChange={(e) => onChange('period', e.target.value)}
+                        value={entryForm[periodField]}
+                        onChange={(e) => updateTimePart(periodField, e.target.value)}
                         sx={{ flex: 1.5 }}
                       >
                         <MenuItem value="AM">AM</MenuItem>
@@ -581,7 +587,7 @@ export default function MyTimesheet() {
               fullWidth
               inputProps={{ min: 0, max: 480, step: 15 }}
               value={entryForm.break_minutes}
-              onChange={(e) => handleTimeChange('break_minutes', e.target.value)}
+              onChange={(e) => updateTimePart('break_minutes', e.target.value)}
             />
             <Box sx={{ p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
               <Typography variant="body2" color="text.secondary">Total Hours Worked</Typography>
