@@ -21,6 +21,7 @@ import InputAdornment from '@mui/material/InputAdornment';
 import Alert from '@mui/material/Alert';
 import Divider from '@mui/material/Divider';
 import Tooltip from '@mui/material/Tooltip';
+import LinearProgress from '@mui/material/LinearProgress';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import AddIcon from '@mui/icons-material/Add';
@@ -74,6 +75,26 @@ const emptyForm = {
 
 interface ProjectCosts {
   [projectId: string]: { timesheetCost: number; expenseCost: number };
+}
+
+interface BudgetStatus {
+  spent: number;
+  budget: number;
+  remaining: number;
+  pct: number;
+  color: 'success' | 'warning' | 'error';
+  overBudget: boolean;
+}
+
+function getBudgetStatus(project: Project, costs: ProjectCosts[string] | undefined): BudgetStatus | null {
+  const budget = Number(project.budget ?? 0);
+  if (budget <= 0 || !costs) return null;
+  const spent = (costs.timesheetCost ?? 0) + (costs.expenseCost ?? 0);
+  const remaining = budget - spent;
+  const pct = (spent / budget) * 100;
+  const overBudget = pct > 100;
+  const color: 'success' | 'warning' | 'error' = overBudget ? 'error' : pct >= 80 ? 'warning' : 'success';
+  return { spent, budget, remaining, pct, color, overBudget };
 }
 
 export default function Projects() {
@@ -159,8 +180,8 @@ export default function Projects() {
       postcode: proj.postcode,
       cost_code: proj.cost_code ?? '',
       status: proj.status,
-      budget: proj.budget.toString(),
-      contract_value: proj.contract_value.toString(),
+      budget: (proj.budget ?? 0).toString(),
+      contract_value: (proj.contract_value ?? 0).toString(),
       start_date: proj.start_date ?? '',
       end_date: proj.end_date ?? '',
       manager_id: proj.manager_id ?? '',
@@ -338,22 +359,51 @@ export default function Projects() {
                         </Typography>
                       </Box>
                     )}
-                    {projectCosts[project.id] && (
-                      <>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <AttachMoneyIcon sx={{ fontSize: 16, color: 'success.main' }} />
-                          <Typography variant="caption" color="success.main" fontWeight={600}>
-                            Labor: ${projectCosts[project.id].timesheetCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                          </Typography>
+                    {(() => {
+                      const status = getBudgetStatus(project, projectCosts[project.id]);
+                      if (!status) {
+                        return projectCosts[project.id] ? (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <ReceiptIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
+                            <Typography variant="caption" color="text.secondary">
+                              Costs: ${(projectCosts[project.id].timesheetCost + projectCosts[project.id].expenseCost).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            </Typography>
+                          </Box>
+                        ) : null;
+                      }
+                      const labor = projectCosts[project.id]?.timesheetCost ?? 0;
+                      const exp = projectCosts[project.id]?.expenseCost ?? 0;
+                      return (
+                        <Box sx={{ mt: 0.5, p: 1.25, bgcolor: 'background.default', borderRadius: 1 }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                            <Typography variant="caption" fontWeight={600}>Budget</Typography>
+                            {status.overBudget ? (
+                              <Chip label={`Over $${Math.abs(Math.round(status.remaining)).toLocaleString()}`} color="error" size="small" sx={{ height: 18, fontSize: '0.65rem' }} />
+                            ) : (
+                              <Typography variant="caption" sx={{ color: `${status.color}.main`, fontWeight: 600 }}>
+                                {status.pct.toFixed(0)}%
+                              </Typography>
+                            )}
+                          </Box>
+                          <Tooltip title={`Labor $${labor.toLocaleString(undefined, { maximumFractionDigits: 0 })} · Expenses $${exp.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}>
+                            <LinearProgress
+                              variant="determinate"
+                              value={Math.min(100, status.pct)}
+                              color={status.color}
+                              sx={{ height: 6, borderRadius: 3, mb: 0.5 }}
+                            />
+                          </Tooltip>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <Typography variant="caption" color="text.secondary">
+                              ${Math.round(status.spent).toLocaleString()} of ${status.budget.toLocaleString()}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: status.overBudget ? 'error.main' : 'text.secondary' }}>
+                              {status.overBudget ? 'Over budget' : `$${Math.round(status.remaining).toLocaleString()} left`}
+                            </Typography>
+                          </Box>
                         </Box>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <ReceiptIcon sx={{ fontSize: 16, color: 'warning.main' }} />
-                          <Typography variant="caption" color="warning.main" fontWeight={600}>
-                            Expenses: ${projectCosts[project.id].expenseCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                          </Typography>
-                        </Box>
-                      </>
-                    )}
+                      );
+                    })()}
                     {project.start_date && (
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <CalendarTodayIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
@@ -402,11 +452,33 @@ export default function Projects() {
                       {[project.client_name, project.city, project.state].filter(Boolean).join(' • ')}
                     </Typography>
                   </Box>
-                  {project.contract_value > 0 && (
-                    <Typography variant="body2" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
-                      ${project.contract_value.toLocaleString()}
-                    </Typography>
-                  )}
+                  {(() => {
+                    const status = getBudgetStatus(project, projectCosts[project.id]);
+                    if (!status) {
+                      return project.contract_value > 0 ? (
+                        <Typography variant="body2" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
+                          ${Number(project.contract_value).toLocaleString()}
+                        </Typography>
+                      ) : null;
+                    }
+                    return (
+                      <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 1, minWidth: 180 }}>
+                        <Box sx={{ flex: 1 }}>
+                          <Tooltip title={`$${Math.round(status.spent).toLocaleString()} of $${status.budget.toLocaleString()}`}>
+                            <LinearProgress
+                              variant="determinate"
+                              value={Math.min(100, status.pct)}
+                              color={status.color}
+                              sx={{ height: 6, borderRadius: 3 }}
+                            />
+                          </Tooltip>
+                        </Box>
+                        <Typography variant="caption" sx={{ color: `${status.color}.main`, fontWeight: 600, minWidth: 40, textAlign: 'right' }}>
+                          {status.overBudget ? `+${(status.pct - 100).toFixed(0)}%` : `${status.pct.toFixed(0)}%`}
+                        </Typography>
+                      </Box>
+                    );
+                  })()}
                   <Chip label={statusLabel[project.status]} color={statusColor[project.status]} size="small" />
                   <Tooltip title="Daily Diary">
                     <IconButton size="small" onClick={() => router.push(`/reports?project=${project.id}`)}>

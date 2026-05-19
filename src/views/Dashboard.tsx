@@ -23,7 +23,9 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import PendingIcon from '@mui/icons-material/HourglassEmpty';
 import DownloadIcon from '@mui/icons-material/Download';
 import AddIcon from '@mui/icons-material/Add';
+import BuildIcon from '@mui/icons-material/Build';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import LinearProgress from '@mui/material/LinearProgress';
 import useApi from '../lib/apiClient';
 import type { Project, Timesheet } from '../lib/database.types';
 import { format, startOfWeek } from 'date-fns';
@@ -37,6 +39,17 @@ interface RecentReport {
   project_name: string | null;
   first_name: string;
   last_name: string;
+}
+
+interface ServiceDueAsset {
+  id: string;
+  name: string;
+  asset_type: string;
+  current_smu: number;
+  last_service_smu: number;
+  service_interval_value: number;
+  service_interval_unit: string;
+  remaining: number;
 }
 
 interface DashboardStats {
@@ -104,6 +117,7 @@ export default function Dashboard() {
   const [recentProjects, setRecentProjects] = useState<Project[]>([]);
   const [pendingTimesheets, setPendingTimesheets] = useState<Timesheet[]>([]);
   const [recentReports, setRecentReports] = useState<RecentReport[]>([]);
+  const [serviceDueAssets, setServiceDueAssets] = useState<ServiceDueAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [weekLabel, setWeekLabel] = useState('');
 
@@ -128,6 +142,7 @@ export default function Dashboard() {
         setRecentProjects(res.recentProjects ?? []);
         setPendingTimesheets((res.pendingTimesheets as Timesheet[]) ?? []);
         setRecentReports(res.recentReports ?? []);
+        setServiceDueAssets(res.serviceDueAssets ?? []);
       } catch (err) {
         console.error('Failed to load dashboard data', err);
       } finally {
@@ -355,6 +370,64 @@ export default function Dashboard() {
                       </Button>
                     </Box>
                   ))}
+                </Stack>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Service Due */}
+          <Card sx={{ mb: 2 }}>
+            <CardContent sx={{ p: 0 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2.5, pt: 2, pb: 1.5 }}>
+                <BuildIcon sx={{ color: 'warning.main', fontSize: 20 }} />
+                <Typography variant="subtitle1" fontWeight={700}>Service Due</Typography>
+                {serviceDueAssets.length > 0 && (
+                  <Chip
+                    label={serviceDueAssets.filter((a) => Number(a.remaining) <= 0).length || serviceDueAssets.length}
+                    color={serviceDueAssets.some((a) => Number(a.remaining) <= 0) ? 'error' : 'warning'}
+                    size="small"
+                    sx={{ ml: 'auto' }}
+                  />
+                )}
+              </Box>
+              <Divider />
+              {loading ? (
+                <Box sx={{ px: 2.5, py: 1 }}>
+                  {Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} height={48} sx={{ mb: 0.5 }} />)}
+                </Box>
+              ) : serviceDueAssets.length === 0 ? (
+                <Box sx={{ textAlign: 'center', py: 3 }}>
+                  <CheckCircleIcon sx={{ color: 'success.main', fontSize: 36, mb: 0.5 }} />
+                  <Typography variant="body2" color="text.secondary">All assets up to date</Typography>
+                </Box>
+              ) : (
+                <Stack divider={<Divider />}>
+                  {serviceDueAssets.map((asset) => {
+                    const remaining = Number(asset.remaining);
+                    const interval = Number(asset.service_interval_value);
+                    const consumed = interval - remaining;
+                    const pct = Math.min(100, Math.max(0, (consumed / interval) * 100));
+                    const overdue = remaining <= 0;
+                    return (
+                      <Box key={asset.id} sx={{ px: 2.5, py: 1.25, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
+                        onClick={() => router.push('/assets')}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                          <Typography variant="body2" fontWeight={600} noWrap sx={{ flex: 1, mr: 1 }}>{asset.name}</Typography>
+                          <Typography variant="caption" fontWeight={700} sx={{ color: overdue ? 'error.main' : 'warning.main' }}>
+                            {overdue
+                              ? `Overdue ${Math.abs(Math.round(remaining)).toLocaleString()} ${asset.service_interval_unit}`
+                              : `In ${Math.round(remaining).toLocaleString()} ${asset.service_interval_unit}`}
+                          </Typography>
+                        </Box>
+                        <LinearProgress
+                          variant="determinate"
+                          value={pct}
+                          color={overdue ? 'error' : 'warning'}
+                          sx={{ height: 4, borderRadius: 2 }}
+                        />
+                      </Box>
+                    );
+                  })}
                 </Stack>
               )}
             </CardContent>

@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     weekStart.setDate(todayDate.getDate() + diffToMonday);
     const weekStartStr = weekStart.toISOString().slice(0, 10);
 
-    const [empRes, projRes, tsRes, reportRes, recentProjRes, pendingTsRes, recentReportsRes, approvedTsRes] = await Promise.all([
+    const [empRes, projRes, tsRes, reportRes, recentProjRes, pendingTsRes, recentReportsRes, approvedTsRes, serviceDueRes] = await Promise.all([
       db.query('SELECT COUNT(*)::int AS count FROM employees WHERE is_active = true'),
       db.query("SELECT COUNT(*)::int AS count FROM projects WHERE status = 'active'"),
       db.query("SELECT COUNT(*)::int AS count FROM timesheets WHERE status = 'submitted'"),
@@ -26,6 +26,17 @@ export async function GET(req: NextRequest) {
       db.query("SELECT t.id, t.employee_id, t.week_start_date, t.total_hours, t.created_at, e.first_name, e.last_name FROM timesheets t LEFT JOIN employees e ON e.id = t.employee_id WHERE t.status = 'submitted' ORDER BY t.created_at DESC LIMIT 5"),
       db.query(`SELECT dr.id, dr.report_date, dr.progress_notes, dr.workers_on_site, dr.is_complete, p.name AS project_name, e.first_name, e.last_name FROM daily_reports dr LEFT JOIN projects p ON p.id = dr.project_id LEFT JOIN employees e ON e.id = dr.reported_by ORDER BY dr.report_date DESC, dr.id DESC LIMIT 7`),
       db.query("SELECT COUNT(*)::int AS count FROM timesheets WHERE status = 'approved' AND week_start_date >= $1", [weekStartStr]),
+      db.query(`
+        SELECT id, name, asset_type, current_smu, last_service_smu, service_interval_value, service_interval_unit,
+               (last_service_smu + service_interval_value - current_smu) AS remaining
+        FROM assets
+        WHERE service_interval_value IS NOT NULL
+          AND service_interval_value > 0
+          AND status != 'retired'
+          AND (last_service_smu + service_interval_value - current_smu) <= (service_interval_value * 0.15)
+        ORDER BY remaining ASC
+        LIMIT 5
+      `),
     ]);
 
     return NextResponse.json({
@@ -39,6 +50,7 @@ export async function GET(req: NextRequest) {
       recentProjects: recentProjRes.rows,
       pendingTimesheets: pendingTsRes.rows,
       recentReports: recentReportsRes.rows,
+      serviceDueAssets: serviceDueRes.rows,
     });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });

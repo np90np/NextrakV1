@@ -20,6 +20,8 @@ import TableRow from '@mui/material/TableRow';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
+import Switch from '@mui/material/Switch';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -46,6 +48,30 @@ const workTypeLabel: Record<WorkType, string> = {
 };
 
 const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+const HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) => String(i + 1));
+const MINUTE_OPTIONS = ['00', '15', '30', '45'];
+
+function parseLocalDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function timeToHMS(time: string): { hour: string; minute: string; period: string } {
+  if (!time) return { hour: '', minute: '', period: 'AM' };
+  const [h, m] = time.split(':').map(Number);
+  const period = h < 12 ? 'AM' : 'PM';
+  const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return { hour: String(hour12), minute: String(m).padStart(2, '0'), period };
+}
+
+function hmsToTime(hour: string, minute: string, period: string): string {
+  if (!hour || !minute) return '';
+  let h = parseInt(hour);
+  if (period === 'AM') { if (h === 12) h = 0; }
+  else { if (h !== 12) h += 12; }
+  return `${String(h).padStart(2, '0')}:${minute}`;
+}
 
 export default function MyTimesheet() {
   const { employee: authEmployee } = useAuth();
@@ -75,6 +101,8 @@ export default function MyTimesheet() {
 
   const [newTsDialogOpen, setNewTsDialogOpen] = useState(false);
   const [newTsWeek, setNewTsWeek] = useState(format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd'));
+  const [copyFromPrev, setCopyFromPrev] = useState(true);
+  const [copySourcePreview, setCopySourcePreview] = useState<{ id: string; weekStart: string; entryCount: number } | null>(null);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -95,17 +123,23 @@ export default function MyTimesheet() {
 
   useEffect(() => { fetchAll(); }, [authEmployee]);
 
-  const openTimesheet = async (ts: Timesheet) => {
-    setSelectedTs(ts);
+  const fetchEntries = async (tsId: string) => {
     setEntriesLoading(true);
-    setDetailOpen(true);
     try {
-      const res = await api.get(`/api/timesheets/${ts.id}`);
+      const res = await api.get(`/api/timesheets/${tsId}`);
       setEntries(res.entries ?? []);
+      if (res.timesheet) setSelectedTs((prev) => prev?.id === tsId ? { ...prev, total_hours: res.timesheet.total_hours } : prev);
     } catch (err: any) {
-      console.error('openTimesheet error', err);
+      console.error('fetchEntries error', err);
     }
     setEntriesLoading(false);
+  };
+
+  const openTimesheet = async (ts: Timesheet) => {
+    setSelectedTs(ts);
+    setEntries([]);
+    setDetailOpen(true);
+    await fetchEntries(ts.id);
   };
 
   const openNewEntry = (defaultDate?: string) => {
@@ -128,8 +162,8 @@ export default function MyTimesheet() {
     setEntryForm({
       project_id: entry.project_id ?? '',
       work_date: entry.work_date,
-      start_time: entry.start_time ?? '',
-      end_time: entry.end_time ?? '',
+      start_time: (entry.start_time ?? '').slice(0, 5),
+      end_time: (entry.end_time ?? '').slice(0, 5),
       hours: entry.hours.toString(),
       break_minutes: (entry.break_minutes ?? 0).toString(),
       description: entry.description,
@@ -163,7 +197,7 @@ export default function MyTimesheet() {
       }
       setSaving(false);
       setEntryDialogOpen(false);
-      openTimesheet(selectedTs!);
+      await fetchEntries(selectedTs!.id);
       fetchAll();
     } catch (err: any) {
       setSaving(false);
@@ -174,7 +208,7 @@ export default function MyTimesheet() {
   const deleteEntry = async (entryId: string) => {
     try {
       await api.del(`/api/timesheets/entries/${entryId}`);
-      openTimesheet(selectedTs!);
+      await fetchEntries(selectedTs!.id);
       fetchAll();
     } catch (err: any) {
       console.error('deleteEntry error', err);
@@ -184,13 +218,47 @@ export default function MyTimesheet() {
   const submitTimesheet = async () => {
     if (!selectedTs) return;
     try {
-      await api.put(`/api/timesheets/${selectedTs.id}`, { status: 'submitted' });
+      await api.put(`/api/timesheets/${selectedTs.id}`, { status: 'submitted', total_hours: selectedTs.total_hours });
       setDetailOpen(false);
       fetchAll();
     } catch (err: any) {
       console.error('submitTimesheet error', err);
     }
   };
+
+  // Find the most recent timesheet before the target week (used as copy source)
+  const findCopySource = async (targetWeek: string): Promise<{ id: string; weekStart: string; entryCount: number } | null> => {
+    if (!authEmployee) return null;
+    const prior = timesheets
+      .filter((t) => String(t.week_start_date).slice(0, 10) < targetWeek)
+      .sort((a, b) => String(b.week_start_date).slice(0, 10).localeCompare(String(a.week_start_date).slice(0, 10)))[0];
+    if (!prior) return null;
+    try {
+      const res = await api.get(`/api/timesheets/${prior.id}`);
+      const count = (res.entries ?? []).length;
+      if (count === 0) return null;
+      return { id: prior.id, weekStart: String(prior.week_start_date).slice(0, 10), entryCount: count };
+    } catch {
+      return null;
+    }
+  };
+
+  const openNewTimesheet = async () => {
+    setError('');
+    const targetWeek = format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd');
+    setNewTsWeek(targetWeek);
+    setCopyFromPrev(true);
+    setCopySourcePreview(null);
+    setNewTsDialogOpen(true);
+    const src = await findCopySource(targetWeek);
+    setCopySourcePreview(src);
+  };
+
+  // Refresh preview when user changes target week
+  useEffect(() => {
+    if (!newTsDialogOpen) return;
+    findCopySource(newTsWeek).then(setCopySourcePreview);
+  }, [newTsWeek, newTsDialogOpen]);
 
   const createTimesheet = async () => {
     if (!authEmployee) return;
@@ -201,6 +269,7 @@ export default function MyTimesheet() {
         week_start_date: newTsWeek,
         status: 'draft',
         total_hours: 0,
+        copy_from_id: copyFromPrev && copySourcePreview ? copySourcePreview.id : undefined,
       });
       setSaving(false);
       setNewTsDialogOpen(false);
@@ -237,12 +306,13 @@ export default function MyTimesheet() {
 
   const getEntriesByDay = () => {
     if (!selectedTs) return {};
-    const weekStart = new Date(selectedTs.week_start_date);
+    const [y, m, d] = selectedTs.week_start_date.slice(0, 10).split('-').map(Number);
+    const weekStart = new Date(y, m - 1, d);
     const byDay: Record<string, TimesheetEntry[]> = {};
     for (let i = 0; i < 7; i++) {
-      const d = addDays(weekStart, i);
-      const key = format(d, 'yyyy-MM-dd');
-      byDay[key] = entries.filter((e) => e.work_date === key);
+      const day = addDays(weekStart, i);
+      const key = format(day, 'yyyy-MM-dd');
+      byDay[key] = entries.filter((e) => String(e.work_date).slice(0, 10) === key);
     }
     return byDay;
   };
@@ -256,7 +326,7 @@ export default function MyTimesheet() {
             Submit your weekly hours for approval
           </Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setError(''); setNewTsDialogOpen(true); }}>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={openNewTimesheet}>
           New Week
         </Button>
       </Box>
@@ -457,34 +527,59 @@ export default function MyTimesheet() {
                 </MenuItem>
               ))}
             </TextField>
-            <Stack spacing={1.5}>
+            <Stack spacing={1}>
               <Typography variant="subtitle2" fontWeight={600}>Work Hours</Typography>
-              <Stack direction="row" spacing={1.5}>
-                <TextField
-                  label="Start Time"
-                  type="time"
-                  required
-                  fullWidth
-                  value={entryForm.start_time}
-                  onChange={(e) => handleTimeChange('start_time', e.target.value)}
-                  InputLabelProps={{ shrink: true }}
-                />
-                <TextField
-                  label="Finish Time"
-                  type="time"
-                  required
-                  fullWidth
-                  value={entryForm.end_time}
-                  onChange={(e) => handleTimeChange('end_time', e.target.value)}
-                  InputLabelProps={{ shrink: true }}
-                />
-              </Stack>
+              {(['start_time', 'end_time'] as const).map((field) => {
+                const hms = timeToHMS(entryForm[field]);
+                const label = field === 'start_time' ? 'Start Time' : 'Finish Time';
+                const onChange = (part: 'hour' | 'minute' | 'period', val: string) => {
+                  const updated = { ...hms, [part]: val };
+                  handleTimeChange(field, hmsToTime(updated.hour, updated.minute, updated.period));
+                };
+                return (
+                  <Box key={field}>
+                    <Typography variant="caption" color="text.secondary" fontWeight={500}>
+                      {label} *
+                    </Typography>
+                    <Stack direction="row" spacing={1} mt={0.5}>
+                      <TextField
+                        select size="small" label="Hour"
+                        value={hms.hour}
+                        onChange={(e) => onChange('hour', e.target.value)}
+                        sx={{ flex: 2 }}
+                        SelectProps={{ MenuProps: { PaperProps: { style: { maxHeight: 220 } } } }}
+                      >
+                        <MenuItem value=""><em>—</em></MenuItem>
+                        {HOUR_OPTIONS.map((h) => <MenuItem key={h} value={h}>{h}</MenuItem>)}
+                      </TextField>
+                      <TextField
+                        select size="small" label="Min"
+                        value={hms.minute}
+                        onChange={(e) => onChange('minute', e.target.value)}
+                        sx={{ flex: 1.5 }}
+                      >
+                        <MenuItem value=""><em>—</em></MenuItem>
+                        {MINUTE_OPTIONS.map((m) => <MenuItem key={m} value={m}>{m}</MenuItem>)}
+                      </TextField>
+                      <TextField
+                        select size="small" label="AM/PM"
+                        value={hms.period}
+                        onChange={(e) => onChange('period', e.target.value)}
+                        sx={{ flex: 1.5 }}
+                      >
+                        <MenuItem value="AM">AM</MenuItem>
+                        <MenuItem value="PM">PM</MenuItem>
+                      </TextField>
+                    </Stack>
+                  </Box>
+                );
+              })}
             </Stack>
             <TextField
               label="Break Time (minutes)"
               type="number"
               fullWidth
-              inputProps={{ min: 0, max: 480 }}
+              inputProps={{ min: 0, max: 480, step: 15 }}
               value={entryForm.break_minutes}
               onChange={(e) => handleTimeChange('break_minutes', e.target.value)}
             />
@@ -517,20 +612,42 @@ export default function MyTimesheet() {
         <DialogTitle fontWeight={600}>New Timesheet Week</DialogTitle>
         <DialogContent dividers>
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-          <TextField
-            label="Week Starting (Monday)"
-            type="date"
-            required
-            fullWidth
-            value={newTsWeek}
-            onChange={(e) => setNewTsWeek(e.target.value)}
-            InputLabelProps={{ shrink: true }}
-          />
+          <Stack spacing={2}>
+            <TextField
+              label="Week Starting (Monday)"
+              type="date"
+              required
+              fullWidth
+              value={newTsWeek}
+              onChange={(e) => setNewTsWeek(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+            />
+            {copySourcePreview ? (
+              <Box sx={{ p: 1.5, borderRadius: 1, bgcolor: 'background.default', border: '1px solid', borderColor: 'divider' }}>
+                <FormControlLabel
+                  control={<Switch checked={copyFromPrev} onChange={(e) => setCopyFromPrev(e.target.checked)} />}
+                  label={
+                    <Box>
+                      <Typography variant="body2" fontWeight={600}>Copy from previous week</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {copySourcePreview.entryCount} {copySourcePreview.entryCount === 1 ? 'entry' : 'entries'} from week of {format(parseLocalDate(copySourcePreview.weekStart), 'MMM d')}
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ alignItems: 'flex-start', m: 0 }}
+                />
+              </Box>
+            ) : (
+              <Typography variant="caption" color="text.secondary">
+                No prior timesheet found to copy from.
+              </Typography>
+            )}
+          </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2 }}>
           <Button onClick={() => setNewTsDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={createTimesheet} disabled={saving}>
-            {saving ? 'Creating...' : 'Create'}
+            {saving ? 'Creating…' : (copyFromPrev && copySourcePreview ? `Create + Copy ${copySourcePreview.entryCount}` : 'Create')}
           </Button>
         </DialogActions>
       </Dialog>
